@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>双机通信中继实验演示系统</title>
+    
+    <!-- 1. 引入 Tailwind CSS (国内极速 CDN) -->
+    <script src="https://cdn.staticfile.net/tailwindcss/2.2.19/tailwind.min.js"></script>
+    
+    <!-- 2. 引入 Lucide 图标库 -->
+    <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+
+    <style>
+        /* 信号虚线动画效果 */
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -20;
+            }
+        }
+        .animate-signal-flow {
+            stroke-dasharray: 6, 4;
+            animation: dash 1s linear infinite;
+        }
+        /* 信号波纹扩散动画 */
+        @keyframes ping-slow {
+            0% { transform: scale(1); opacity: 0.8; }
+            100% { transform: scale(2.5); opacity: 0; }
+        }
+        .animate-ping-slow {
+            animation: ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen overflow-x-hidden font-sans flex flex-col justify-between">
+
+    <div class="max-w-7xl mx-auto p-4 md:p-6 space-y-6 w-full">
+        <!-- 头部导航 -->
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-gray-800 pb-4 gap-4">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-teal-400">
+                    双机通信中继实验演示系统
+                </h1>
+                <p class="text-gray-400 text-sm mt-1">
+                    模拟主机信号衰减，二号机飞往中继点恢复通信链路的完整实验过程
+                </p>
+            </div>
+            <div class="flex gap-3">
+                <button id="btn-start" onclick="startExperiment()" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg shadow-lg transition duration-200 flex items-center gap-2">
+                    <i data-lucide="play" class="w-4 h-4"></i> 开始实验
+                </button>
+                <button id="btn-reset" onclick="resetExperiment()" class="hidden px-5 py-2.5 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg shadow-lg transition duration-200 flex items-center gap-2">
+                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i> 重置实验
+                </button>
+            </div>
+        </header>
+
+        <!-- 主体网格 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- 左侧 & 中间：动画演示画布 (占 2 列) -->
+            <div class="lg:col-span-2 bg-gray-800/50 border border-gray-700/80 rounded-2xl p-4 relative overflow-hidden flex flex-col justify-between min-h-[450px]">
+                
+                <!-- 画布顶部状态条 -->
+                <div class="flex justify-between items-center mb-4 z-10">
+                    <span class="text-sm font-semibold tracking-wider text-gray-400 uppercase">
+                        实时仿真场景
+                    </span>
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
+                        <span id="status-text" class="text-xs text-gray-300">准备就绪</span>
+                    </div>
+                </div>
+
+                <!-- 核心 SVG 动画区 -->
+                <div class="relative flex-1 w-full bg-gray-950/80 rounded-xl border border-gray-800 min-h-[320px]">
+                    <svg class="w-full h-full absolute inset-0" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        <!-- 地面与山脉背景 -->
+                        <path d="M 0 90 Q 20 85 40 90 T 80 88 T 100 90 L 100 100 L 0 100 Z" fill="#1f2937" opacity="0.4" />
+                        
+                        <!-- 地面基站 (位于左下角) -->
+                        <g transform="translate(15, 80)">
+                            <line x1="0" y1="0" x2="0" y2="-15" stroke="#9ca3af" stroke-width="1" />
+                            <polygon points="0,-18 -4,-12 4,-12" fill="#3b82f6" />
+                            <circle cx="0" cy="-18" r="1.5" fill="#ef4444" class="animate-pulse" />
+                            <rect x="-6" y="0" width="12" height="10" fill="#374151" rx="1" />
+                        </g>
+
+                        <!-- 动态信号线 -->
+                        <g id="signal-lines">
+                            <!-- 由 JS 动态渲染 -->
+                        </g>
+                    </svg>
+
+                    <!-- 主机 UAV-01 -->
+                    <div id="uav1" style="left: 20%; top: 60%;" class="absolute transform -translate-x-1/2 -translate-y-1/2 transition-all duration-150 ease-linear">
+                        <div class="relative flex flex-col items-center">
+                            <div id="uav1-ping" class="hidden absolute w-10 h-10 bg-red-500/20 rounded-full animate-ping-slow -top-2"></div>
+                            <div class="bg-blue-600 p-2 rounded-full shadow-lg border border-blue-400">
+                                <i data-lucide="send" class="w-5 h-5 text-white transform rotate-45"></i>
+                            </div>
+                            <span class="text-[10px] font-bold bg-gray-900/90 px-1.5 py-0.5 rounded border border-gray-700 mt-1 whitespace-nowrap">
+                                UAV-01 (主机)
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- 中继机 UAV-02 -->
+                    <div id="uav2" style="left: 15%; top: 25%;" class="absolute transform -translate-x-1/2 -translate-y-1/2 transition-all duration-150 ease-out">
+                        <div class="relative flex flex-col items-center">
+                            <div id="uav2-ping" class="hidden absolute w-12 h-12 bg-green-500/20 rounded-full animate-ping-slow -top-2"></div>
+                            <div id="uav2-icon-wrapper" class="p-2 rounded-full shadow-lg border bg-gray-700 border-gray-500 opacity-60 transition-all duration-300">
+                                <i data-lucide="shuffle" class="w-5 h-5 text-white"></i>
+                            </div>
+                            <span class="text-[10px] font-bold bg-gray-900/90 px-1.5 py-0.5 rounded border border-gray-700 mt-1 whitespace-nowrap">
+                                UAV-02 (中继)
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- 地面基站标注 -->
+                    <div class="absolute left-[15%] bottom-[22%] transform -translate-x-1/2">
+                        <span class="text-[10px] font-bold bg-gray-900/90 px-1.5 py-0.5 rounded border border-gray-700">
+                            地面控制基站
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：仪表盘与实验控制台 (占 1 列) -->
+            <div class="space-y-6">
+                
+                <!-- 仪表盘 -->
+                <div class="bg-gray-800/50 border border-gray-700/80 rounded-2xl p-5 space-y-4">
+                    <h3 class="text-sm font-semibold tracking-wider text-gray-400 uppercase">
+                        遥测数据面板
+                    </h3>
+                    
+                    <!-- 主机信号条 -->
+                    <div class="space-y-2">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-gray-300 flex items-center gap-1.5">
+                                <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                                UAV-01 主机信号
+                            </span>
+                            <span id="uav1-signal-text" class="font-bold text-green-400">100%</span>
+                        </div>
+                        <div class="w-full bg-gray-950 rounded-full h-2.5 overflow-hidden border border-gray-800">
+                            <div id="uav1-signal-bar" class="h-full bg-green-500 transition-all duration-150" style="width: 100%"></div>
+                        </div>
+                    </div>
+
+                    <!-- 中继机状态 -->
+                    <div class="space-y-2">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-gray-300 flex items-center gap-1.5">
+                                <span class="w-2 h-2 rounded-full bg-teal-500"></span>
+                                UAV-02 中继机状态
+                            </span>
+                            <span id="uav2-status-text" class="font-bold text-teal-400">待命</span>
+                        </div>
+                        <div class="flex items-center gap-2 bg-gray-950 p-2.5 rounded-lg border border-gray-800 text-xs">
+                            <div id="relay-status-dot" class="w-2.5 h-2.5 rounded-full bg-gray-600"></div>
+                            <span class="text-gray-400">中继链路：</span>
+                            <span id="relay-status-text" class="text-gray-500 font-semibold">未建立 (Disconnected)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 实验控制台日志 -->
+                <div class="bg-gray-800/50 border border-gray-700/80 rounded-2xl p-5 flex flex-col h-[230px]">
+                    <h3 class="text-sm font-semibold tracking-wider text-gray-400 uppercase mb-3">
+                        实验运行日志
+                    </h3>
+                    <div id="log-container" class="flex-1 bg-gray-950 rounded-xl p-3 border border-gray-800 overflow-y-auto text-xs font-mono space-y-2 text-gray-300">
+                        <!-- 日志内容由 JS 动态插入 -->
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 初始状态定义
+        let state = {
+            status: 'idle', // 'idle', 'flying', 'relaying', 'connected', 'finished'
+            uav1Signal: 100,
+            relayConnected: false,
+            uav1Pos: { x: 20, y: 60 },
+            uav2Pos: { x: 15, y: 25 }
+        };
+
+        let timer = null;
+
+        // 初始化日志
+        addLog('系统初始化完毕，等待实验启动...');
+
+        // 核心运行逻辑
+        function startExperiment() {
+            state.status = 'flying';
+            document.getElementById('btn-start').classList.add('hidden');
+            document.getElementById('btn-reset').classList.remove('hidden');
+            
+            addLog('【任务启动】主机 UAV-01 起飞，执行预设轨迹巡检任务...');
+            
+            let step = 0;
+            timer = setInterval(() => {
+                if (state.status === 'flying') {
+                    step += 1;
+                    state.uav1Pos.x += 1.2;
+                    
+                    // 计算信号衰减
+                    const distance = state.uav1Pos.x - 20;
+                    state.uav1Signal = Math.max(15, Math.round(100 - distance * 1.5));
+
+                    // 触发中继机起飞
+                    if (state.uav1Signal < 35) {
+                        state.status = 'relaying';
+                        addLog('【警报】主机信号低于临界值(35%)！触发中继机制，UAV-02 紧急起飞中...');
+                    }
+                } 
+                else if (state.status === 'relaying') {
+                    // 中继机向中心点靠拢
+                    const targetX = (state.uav1Pos.x + 20) / 2 + 5;
+                    const targetY = 45;
+                    state.uav2Pos.x += (targetX - state.uav2Pos.x) * 0.15;
+                    state.uav2Pos.y += (targetY - state.uav2Pos.y) * 0.15;
+
+                    // 主机继续微幅前行，信号持续走低
+                    state.uav1Pos.x += 0.3;
+                    const distance = state.uav1Pos.x - 20;
+                    state.uav1Signal = Math.max(10, Math.round(100 - distance * 1.5));
+
+                    // 判断中继机是否到达位置
+                    if (Math.abs(state.uav2Pos.y - targetY) < 1) {
+                        state.status = 'connected';
+                        state.relayConnected = true;
+                        addLog('【中继成功】UAV-02 已到达指定中继点，双机通信链路成功建立！');
+                    }
+                } 
+                else if (state.status === 'connected') {
+                    // 恢复主机信号
+                    state.uav1Signal += 5;
+                    if (state.uav1Signal >= 92) {
+                        state.uav1Signal = 92;
+                        state.status = 'finished';
+                        addLog('【系统稳定】通信中继链路带宽恢复正常，数据传输稳定。');
+                        clearInterval(timer);
+                    }
+                }
+
+                updateUI();
+            }, 150);
+        }
+
+        // 重置实验
+        function resetExperiment() {
+            clearInterval(timer);
+            state = {
+                status: 'idle',
+                uav1Signal: 100,
+                relayConnected: false,
+                uav1Pos: { x: 20, y: 60 },
+                uav2Pos: { x: 15, y: 25 }
+            };
+            
+            document.getElementById('btn-start').classList.remove('hidden');
+            document.getElementById('btn-reset').classList.add('hidden');
+            
+            // 清空日志并重新初始化
+            document.getElementById('log-container').innerHTML = '';
+            addLog('实验重置成功，等待重新启动。');
+            
+            updateUI();
+        }
+
+        // 渲染与更新 UI 界面
+        function updateUI() {
+            // 1. 更新无人机位置
+            const uav1El = document.getElementById('uav1');
+            const uav2El = document.getElementById('uav2');
+            uav1El.style.left = `${state.uav1Pos.x}%`;
+            uav1El.style.top = `${state.uav1Pos.y}%`;
+            uav2El.style.left = `${state.uav2Pos.x}%`;
+            uav2El.style.top = `${state.uav2Pos.y}%`;
+
+            // 2. 更新状态文本
+            const statusText = document.getElementById('status-text');
+            const uav2StatusText = document.getElementById('uav2-status-text');
+            if (state.status === 'idle') {
+                statusText.innerText = '准备就绪';
+                uav2StatusText.innerText = '待命';
+            } else if (state.status === 'flying') {
+                statusText.innerText = '主机巡检中 (信号衰减中)';
+                uav2StatusText.innerText = '准备就绪';
+            } else if (state.status === 'relaying') {
+                statusText.innerText = '中继机紧急起飞中';
+                uav2StatusText.innerText = '升空拦截中';
+            } else if (state.status === 'connected') {
+                statusText.innerText = '中继链路已建立';
+                uav2StatusText.innerText = '中继中';
+            } else if (state.status === 'finished') {
+                statusText.innerText = '中继完成 (链路稳定)';
+                uav2StatusText.innerText = '中继中';
+            }
+
+            // 3. 更新信号强度条和颜色
+            const signalText = document.getElementById('uav1-signal-text');
+            const signalBar = document.getElementById('uav1-signal-bar');
+            signalText.innerText = `${state.uav1Signal}%`;
+            signalBar.style.width = `${state.uav1Signal}%`;
+
+            if (state.uav1Signal > 70) {
+                signalText.className = 'font-bold text-green-400';
+                signalBar.className = 'h-full bg-green-500 transition-all duration-150';
+                document.getElementById('uav1-ping').classList.add('hidden');
+            } else if (state.uav1Signal > 35) {
+                signalText.className = 'font-bold text-yellow-400';
+                signalBar.className = 'h-full bg-yellow-500 transition-all duration-150';
+                document.getElementById('uav1-ping').classList.add('hidden');
+            } else {
+                signalText.className = 'font-bold text-red-400';
+                signalBar.className = 'h-full bg-red-500 transition-all duration-150';
+                // 信号低时开启警报波纹
+                document.getElementById('uav1-ping').classList.remove('hidden');
+            }
+
+            // 4. 更新中继机样式与连接状态
+            const uav2Wrapper = document.getElementById('uav2-icon-wrapper');
+            const relayDot = document.getElementById('relay-status-dot');
+            const relayText = document.getElementById('relay-status-text');
+            const uav2Ping = document.getElementById('uav2-ping');
+
+            if (state.status === 'idle') {
+                uav2Wrapper.className = 'p-2 rounded-full shadow-lg border bg-gray-700 border-gray-500 opacity-60 transition-all duration-300';
+            } else {
+                uav2Wrapper.className = 'p-2 rounded-full shadow-lg border bg-teal-600 border-teal-400 transition-all duration-300';
+            }
+
+            if (state.relayConnected) {
+                relayDot.className = 'w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse';
+                relayText.innerText = '已连接 (Connected)';
+                relayText.className = 'text-green-400 font-semibold';
+                uav2Ping.classList.remove('hidden');
+            } else {
+                relayDot.className = 'w-2.5 h-2.5 rounded-full bg-gray-600';
+                relayText.innerText = '未建立 (Disconnected)';
+                relayText.className = 'text-gray-500 font-semibold';
+                uav2Ping.classList.add('hidden');
+            }
+
+            // 5. 动态重绘信号链路 SVG
+            const signalLinesContainer = document.getElementById('signal-lines');
+            let linesHtml = '';
+            if (!state.relayConnected) {
+                // 未建立中继：基站直接连主机
+                const color = state.uav1Signal > 70 ? '#10b981' : state.uav1Signal > 35 ? '#f59e0b' : '#ef4444';
+                linesHtml = `<line x1="15" y1="62" x2="${state.uav1Pos.x}" y2="${state.uav1Pos.y}" stroke="${color}" stroke-width="0.8" class="animate-signal-flow" />`;
+            } else {
+                // 已建立中继：基站 -> 中继机 -> 主机
+                linesHtml = `
+                    <line x1="15" y1="62" x2="${state.uav2Pos.x}" y2="${state.uav2Pos.y}" stroke="#10b981" stroke-width="0.8" class="animate-signal-flow" />
+                    <line x1="${state.uav2Pos.x}" y1="${state.uav2Pos.y}" x2="${state.uav1Pos.x}" y2="${state.uav1Pos.y}" stroke="#10b981" stroke-width="0.8" class="animate-signal-flow" />
+                `;
+            }
+            signalLinesContainer.innerHTML = linesHtml;
+        }
+
+        // 辅助：打印日志
+        function addLog(msg) {
+            const container = document.getElementById('log-container');
+            const time = new Date().toLocaleTimeString();
+            const logItem = document.createElement('div');
+            logItem.className = 'leading-relaxed text-gray-400';
+            logItem.innerHTML = `<span class="text-teal-500">[${time}]</span> ${msg}`;
+            
+            // 插入到最前面
+            container.insertBefore(logItem, container.firstChild);
+        }
+
+        // 初始化 Lucide 图标
+        lucide.createIcons();
+        updateUI();
+    </script>
+</body>
+</html>
