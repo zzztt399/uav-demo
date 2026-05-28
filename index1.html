@@ -2,34 +2,390 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>无人机中继系统演示</title>
-    <!-- 引入 Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 引入 React 与 Babel -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>双机通信中继实验演示系统</title>
+    
+    <!-- 1. 引入 Tailwind CSS 样式库 -->
+    <script src="https://cdn.staticfile.net/tailwindcss/2.2.19/tailwind.min.js"></script>
+    
+    <!-- 2. 引入 React 核心库与 DOM 库 (国内极速 CDN) -->
     <script src="https://cdn.staticfile.net/react/18.2.0/umd/react.production.min.js" crossorigin></script>
     <script src="https://cdn.staticfile.net/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- 3. 引入 Babel 用于在浏览器中实时解析 JSX (国内极速 CDN) -->
     <script src="https://cdn.staticfile.net/babel-standalone/7.23.3/babel.min.js" crossorigin></script>
+
+    <!-- 4. 引入 Lucide 图标库 -->
+    <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+
+    <style>
+        /* 信号虚线动画效果 */
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -20;
+            }
+        }
+        .animate-signal-flow {
+            stroke-dasharray: 6, 4;
+            animation: dash 1s linear infinite;
+        }
+        /* 信号波纹扩散动画 */
+        @keyframes ping-slow {
+            0% { transform: scale(1); opacity: 0.8; }
+            100% { transform: scale(2.5); opacity: 0; }
+        }
+        .animate-ping-slow {
+            animation: ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+    </style>
 </head>
-<body class="bg-slate-100 overflow-x-hidden">
+<body class="bg-gray-900 text-gray-100 min-h-screen overflow-x-hidden font-sans">
 
     <!-- React 挂载的根节点 -->
     <div id="root"></div>
 
-    <!-- 所有的 React 代码都直接写在下面这个标签内部 -->
+    <!-- 所有的 React 代码直接写在下方，不依赖任何外部 .js 文件 -->
     <script type="text/babel">
-        // 1. 定义你的 React 组件
+        const { useState, useEffect, useRef } = React;
+
         function App() {
+            // 实验状态控制：'idle' (未开始), 'flying' (主机飞行中/信号变差), 'relaying' (中继机起飞中), 'connected' (中继成功), 'finished' (任务完成)
+            const [status, setStatus] = useState('idle');
+            
+            // 模拟数据状态
+            const [uav1Signal, setUav1Signal] = useState(100); // 主机信号强度 %
+            const [uav2Signal, setUav2Signal] = useState(100); // 中继机信号强度 %
+            const [relayConnected, setRelayConnected] = useState(false); // 中继链路是否建立
+            const [log, setLog] = useState(['系统初始化完毕，等待实验启动...']);
+
+            // 动画坐标状态 (百分比定位)
+            const [uav1Pos, setUav1Pos] = useState({ x: 20, y: 60 });
+            const [uav2Pos, setUav2Pos] = useState({ x: 15, y: 25 }); // 初始在地面/基站附近
+
+            // 动画主循环
+            useEffect(() => {
+                let timer;
+                if (status === 'flying') {
+                    // 阶段 1：主机向右飞行，远离基站，信号逐渐衰减
+                    let step = 0;
+                    addLog('【任务启动】主机 UAV-01 起飞，执行预设轨迹巡检任务...');
+                    
+                    timer = setInterval(() => {
+                        step += 1;
+                        setUav1Pos(prev => {
+                            const nextX = prev.x + 1.2;
+                            // 信号随距离增加而衰减
+                            const distance = nextX - 20;
+                            const newSignal = Math.max(15, Math.round(100 - distance * 1.5));
+                            setUav1Signal(newSignal);
+
+                            if (newSignal < 35 && status !== 'relaying') {
+                                setStatus('relaying'); // 触发中继机起飞
+                            }
+                            return { ...prev, x: nextX };
+                        });
+
+                        if (step >= 35) {
+                            clearInterval(timer);
+                        }
+                    }, 150);
+                } 
+                
+                else if (status === 'relaying') {
+                    addLog('【警报】主机信号低于临界值(35%)！触发中继机制，UAV-02 紧急起飞中...');
+                    let step = 0;
+                    timer = setInterval(() => {
+                        step += 1;
+                        // 中继机飞向主机与基站的中间位置
+                        setUav2Pos(prev => {
+                            const targetX = (uav1Pos.x + 20) / 2 + 5;
+                            const targetY = 45;
+                            const nextX = prev.x + (targetX - prev.x) * 0.15;
+                            const nextY = prev.y + (targetY - prev.y) * 0.15;
+                            return { x: nextX, y: nextY };
+                        });
+
+                        // 主机继续微幅前行，信号持续走低
+                        setUav1Pos(prev => {
+                            const nextX = prev.x + 0.3;
+                            const distance = nextX - 20;
+                            setUav1Signal(Math.max(10, Math.round(100 - distance * 1.5)));
+                            return { ...prev, x: nextX };
+                        });
+
+                        if (step >= 20) {
+                            clearInterval(timer);
+                            setStatus('connected');
+                        }
+                    }, 150);
+                } 
+                
+                else if (status === 'connected') {
+                    addLog('【中继成功】UAV-02 已到达指定中继点，双机通信链路成功建立！');
+                    setRelayConnected(true);
+                    
+                    // 恢复主机信号
+                    let currentSignal = uav1Signal;
+                    timer = setInterval(() => {
+                        currentSignal += 5;
+                        if (currentSignal >= 90) {
+                            currentSignal = 92;
+                            clearInterval(timer);
+                            setStatus('finished');
+                            addLog('【系统稳定】通信中继链路带宽恢复正常，数据传输稳定。');
+                        }
+                        setUav1Signal(currentSignal);
+                    }, 100);
+                }
+
+                return () => clearInterval(timer);
+            }, [status]);
+
+            // 辅助：添加日志
+            const addLog = (msg) => {
+                const time = new Date().toLocaleTimeString();
+                setLog(prev => [`[${time}] ${msg}`, ...prev]);
+            };
+
+            // 重置实验
+            const handleReset = () => {
+                setStatus('idle');
+                setUav1Signal(100);
+                setUav2Signal(100);
+                setRelayConnected(false);
+                setUav1Pos({ x: 20, y: 60 });
+                setUav2Pos({ x: 15, y: 25 });
+                setLog(['实验重置成功，等待重新启动。']);
+            };
+
             return (
-                <div class="p-6">
-                    <h1 class="text-2xl font-bold text-slate-800">无人机通信中继演示系统</h1>
-                    <p class="text-slate-600 mt-2">系统已成功启动！</p>
+                <div class="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
+                    {/* 头部导航 */}
+                    <header class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-gray-800 pb-4 gap-4">
+                        <div>
+                            <h1 class="text-2xl md:text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-teal-400">
+                                双机通信中继实验演示系统
+                            </h1>
+                            <p class="text-gray-400 text-sm mt-1">
+                                模拟主机信号衰减，二号机飞往中继点恢复通信链路的完整实验过程
+                            </p>
+                        </div>
+                        <div class="flex gap-3">
+                            {status === 'idle' && (
+                                <button 
+                                    onClick={() => setStatus('flying')}
+                                    class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg shadow-lg transition duration-200 flex items-center gap-2"
+                                >
+                                    <i data-lucide="play" class="w-4 h-4"></i> 开始实验
+                                </button>
+                            )}
+                            {status !== 'idle' && (
+                                <button 
+                                    onClick={handleReset}
+                                    class="px-5 py-2.5 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg shadow-lg transition duration-200 flex items-center gap-2"
+                                >
+                                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i> 重置实验
+                                </button>
+                            )}
+                        </div>
+                    </header>
+
+                    {/* 主体网格 */}
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        
+                        {/* 左侧 & 中间：动画演示画布 (占 2 列) */}
+                        <div class="lg:col-span-2 bg-gray-800/50 border border-gray-700/80 rounded-2xl p-4 relative overflow-hidden flex flex-col justify-between min-h-[450px]">
+                            
+                            {/* 画布顶部状态条 */}
+                            <div class="flex justify-between items-center mb-4 z-10">
+                                <span class="text-sm font-semibold tracking-wider text-gray-400 uppercase">
+                                    实时仿真场景
+                                </span>
+                                <div class="flex items-center gap-2">
+                                    <span class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
+                                    <span class="text-xs text-gray-300">
+                                        {status === 'idle' && '准备就绪'}
+                                        {status === 'flying' && '主机巡检中 (信号衰减中)'}
+                                        {status === 'relaying' && '中继机紧急起飞中'}
+                                        {status === 'connected' && '中继链路已建立'}
+                                        {status === 'finished' && '中继完成 (链路稳定)'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* 核心 SVG 动画区 */}
+                            <div class="relative flex-1 w-full bg-gray-950/80 rounded-xl border border-gray-800 min-h-[320px]">
+                                <svg class="w-full h-full absolute inset-0" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                    {/* 地面与山脉背景 */}
+                                    <path d="M 0 90 Q 20 85 40 90 T 80 88 T 100 90 L 100 100 L 0 100 Z" fill="#1f2937" opacity="0.4" />
+                                    
+                                    {/* 1. 地面基站 (位于左下角) */}
+                                    <g transform="translate(15, 80)">
+                                        {/* 基站天线 */}
+                                        <line x1="0" y1="0" x2="0" y2="-15" stroke="#9ca3af" strokeWidth="1" />
+                                        <polygon points="0,-18 -4,-12 4,-12" fill="#3b82f6" />
+                                        <circle cx="0" cy="-18" r="1.5" fill="#ef4444" class="animate-pulse" />
+                                        {/* 基站房子 */}
+                                        <rect x="-6" y="0" width="12" height="10" fill="#374151" rx="1" />
+                                    </g>
+
+                                    {/* 2. 信号传输链路 (动态虚线) */}
+                                    {/* 基站 -> 主机 (UAV-01) */}
+                                    {!relayConnected ? (
+                                        <line 
+                                            x1="15" y1="62" 
+                                            x2={uav1Pos.x} y2={uav1Pos.y} 
+                                            stroke={uav1Signal > 40 ? "#10b981" : uav1Signal > 20 ? "#f59e0b" : "#ef4444"} 
+                                            strokeWidth="0.8" 
+                                            class="animate-signal-flow"
+                                        />
+                                    ) : (
+                                        // 中继成功后：基站 -> 中继机 -> 主机
+                                        <>
+                                            <line 
+                                                x1="15" y1="62" 
+                                                x2={uav2Pos.x} y2={uav2Pos.y} 
+                                                stroke="#10b981" 
+                                                strokeWidth="0.8" 
+                                                class="animate-signal-flow"
+                                            />
+                                            <line 
+                                                x1={uav2Pos.x} y1={uav2Pos.y} 
+                                                x2={uav1Pos.x} y2={uav1Pos.y} 
+                                                stroke="#10b981" 
+                                                strokeWidth="0.8" 
+                                                class="animate-signal-flow"
+                                            />
+                                        </>
+                                    )}
+                                </svg>
+
+                                {/* 3. 悬浮的无人机元素 (使用 HTML 绝对定位) */}
+                                {/* 主机 UAV-01 */}
+                                <div 
+                                    style={{ left: `${uav1Pos.x}%`, top: `${uav1Pos.y}%` }}
+                                    class="absolute transform -translate-x-1/2 -translate-y-1/2 transition-all duration-150 ease-linear"
+                                >
+                                    <div class="relative flex flex-col items-center">
+                                        {/* 信号波纹 */}
+                                        {uav1Signal < 35 && (
+                                            <div class="absolute w-10 h-10 bg-red-500/20 rounded-full animate-ping-slow -top-2"></div>
+                                        )}
+                                        {/* 无人机图标 */}
+                                        <div class="bg-blue-600 p-2 rounded-full shadow-lg border border-blue-400">
+                                            <i data-lucide="send" class="w-5 h-5 text-white transform rotate-45"></i>
+                                        </div>
+                                        <span class="text-[10px] font-bold bg-gray-900/90 px-1.5 py-0.5 rounded border border-gray-700 mt-1 whitespace-nowrap">
+                                            UAV-01 (主机)
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* 中继机 UAV-02 */}
+                                <div 
+                                    style={{ left: `${uav2Pos.x}%`, top: `${uav2Pos.y}%` }}
+                                    class="absolute transform -translate-x-1/2 -translate-y-1/2 transition-all duration-150 ease-out"
+                                >
+                                    <div class="relative flex flex-col items-center">
+                                        {/* 信号波纹 */}
+                                        {relayConnected && (
+                                            <div class="absolute w-12 h-12 bg-green-500/20 rounded-full animate-ping-slow -top-2"></div>
+                                        )}
+                                        <div class={`p-2 rounded-full shadow-lg border transition-all duration-300 ${status === 'idle' ? 'bg-gray-700 border-gray-500 opacity-60' : 'bg-teal-600 border-teal-400'}`}>
+                                            <i data-lucide="shuffle" class="w-5 h-5 text-white"></i>
+                                        </div>
+                                        <span class="text-[10px] font-bold bg-gray-900/90 px-1.5 py-0.5 rounded border border-gray-700 mt-1 whitespace-nowrap">
+                                            UAV-02 (中继)
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* 地面基站标注 */}
+                                <div class="absolute left-[15%] bottom-[22%] transform -translate-x-1/2">
+                                    <span class="text-[10px] font-bold bg-gray-900/90 px-1.5 py-0.5 rounded border border-gray-700">
+                                        地面控制基站
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 右侧：仪表盘与实验控制台 (占 1 列) */}
+                        <div class="space-y-6">
+                            
+                            {/* 仪表盘 */}
+                            <div class="bg-gray-800/50 border border-gray-700/80 rounded-2xl p-5 space-y-4">
+                                <h3 class="text-sm font-semibold tracking-wider text-gray-400 uppercase">
+                                    遥测数据面板
+                                </h3>
+                                
+                                {/* 主机信号条 */}
+                                <div class="space-y-2">
+                                    <div class="flex justify-between text-xs">
+                                        <span class="text-gray-300 flex items-center gap-1.5">
+                                            <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                                            UAV-01 主机信号
+                                        </span>
+                                        <span class={`font-bold ${uav1Signal > 70 ? 'text-green-400' : uav1Signal > 35 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                            {uav1Signal}%
+                                        </span>
+                                    </div>
+                                    <div class="w-full bg-gray-950 rounded-full h-2.5 overflow-hidden border border-gray-800">
+                                        <div 
+                                            class={`h-full transition-all duration-150 ${uav1Signal > 70 ? 'bg-green-500' : uav1Signal > 35 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                                            style={{ width: `${uav1Signal}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+
+                                {/* 中继机状态 */}
+                                <div class="space-y-2">
+                                    <div class="flex justify-between text-xs">
+                                        <span class="text-gray-300 flex items-center gap-1.5">
+                                            <span class="w-2 h-2 rounded-full bg-teal-500"></span>
+                                            UAV-02 中继机状态
+                                        </span>
+                                        <span class="font-bold text-teal-400">
+                                            {status === 'idle' ? '待命' : status === 'flying' ? '准备就绪' : status === 'relaying' ? '升空拦截中' : '中继中'}
+                                        </span>
+                                    </div>
+                                    <div class="flex items-center gap-2 bg-gray-950 p-2.5 rounded-lg border border-gray-800 text-xs">
+                                        <div class={`w-2.5 h-2.5 rounded-full ${relayConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-600'}`}></div>
+                                        <span class="text-gray-400">中继链路：</span>
+                                        <span class={relayConnected ? 'text-green-400 font-semibold' : 'text-gray-500'}>
+                                            {relayConnected ? '已连接 (Connected)' : '未建立 (Disconnected)'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 实验控制台日志 */}
+                            <div class="bg-gray-800/50 border border-gray-700/80 rounded-2xl p-5 flex flex-col h-[230px]">
+                                <h3 class="text-sm font-semibold tracking-wider text-gray-400 uppercase mb-3">
+                                    实验运行日志
+                                </h3>
+                                <div class="flex-1 bg-gray-950 rounded-xl p-3 border border-gray-800 overflow-y-auto text-xs font-mono space-y-2 text-gray-300">
+                                    {log.map((item, idx) => (
+                                        <div key={idx} class={`leading-relaxed ${idx === 0 ? 'text-teal-400 font-semibold' : 'text-gray-400'}`}>
+                                            {item}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
                 </div>
             );
         }
 
-        // 2. 渲染组件到根节点
+        // 渲染 React 根组件
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
+
+        // 初始化 Lucide 图标
+        setTimeout(() => {
+            lucide.createIcons();
+        }, 500);
     </script>
 </body>
 </html>
