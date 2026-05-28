@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <!-- 极其重要：防止手机端微信扫码后，双击屏幕或缩放导致排版错乱 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>数字化低空控制塔 - 动态重构仿真系统</title>
+    
+    <!-- 引入 Tailwind CSS 样式库 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 引入 React 核心库与 DOM 库 (UMD 生产版本) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- 引入 Babel 用于在浏览器中解析 JSX -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.3/babel.min.js"></script>
+    
+    <!-- 引入 Lucide 图标库 -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        /* 针对移动端微信浏览器的丝滑滚动与防选中优化 */
+        body {
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+            background-color: #0b0f19;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        /* 隐藏滚动条但保留滚动功能 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="text-slate-100 overflow-x-hidden">
+
+    <!-- React 挂载根节点 -->
+    <div id="root"></div>
+
+    <!-- 载入我们的 React 逻辑代码 -->
+    <script type="text/babel" src="App.js"></script>
+
+</body>
+</html>
